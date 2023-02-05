@@ -1,0 +1,115 @@
+---
+title: "DATA608 HW1"
+author: "Josh Iden"
+date: "`r Sys.Date()`"
+output:   
+  html_document:
+    theme: cerulean
+    highlight: rstudio
+    code_folding: show
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+---
+  
+  
+**Principles of Data Visualization and Introduction to ggplot2**
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+```
+I have provided you with data about the 5,000 fastest growing companies in the US, as compiled by Inc. magazine. Lets read this in:    
+
+```{r}
+inc <- read.csv("https://raw.githubusercontent.com/charleyferrari/CUNY_DATA_608/master/module1/Data/inc5000_data.csv", header= TRUE)
+```
+
+And lets preview this data:  
+
+```{r}
+head(inc)
+```
+```{r}
+summary(inc)
+```
+
+Think a bit on what these summaries mean. Use the space below to add some more relevant non-visual exploratory information you think helps you understand this data:
+
+```{r}
+# view the structure of the data
+str(inc)
+```
+```{r}
+# how many industries
+n_distinct(inc$Industry)
+```
+
+```{r}
+# frequently occurring industries
+ind_tab <- table(inc$Industry)
+ind_tab <- ind_tab[order(ind_tab, decreasing=TRUE)]
+kable(ind_tab, col.names=c('Industry','Count')) |>
+  kable_styling("striped", full_width = F) |>
+  scroll_box(width = "500px", height = "200px")
+```
+
+
+## Question 1
+
+Create a graph that shows the distribution of companies in the dataset by State (ie how many are in each state). There are a lot of States, so consider which axis you should use. This visualization is ultimately going to be consumed on a 'portrait' oriented screen (ie taller than wide), which should further guide your layout choices.
+
+```{r}
+# Answer Question 1 here
+inc |>
+  group_by(State) |>
+  count(sort=TRUE) |>
+  ggplot(aes(x=reorder(State, n), y=n)) +
+  geom_col(fill="lightblue") +
+  coord_flip() +
+  theme(axis.text.y = element_text(size = 5.5)) +
+  labs(title = "Distribution of Companies by State", x = "Companies", y = "State")
+```
+
+## Question 2
+
+Lets dig in on the state with the 3rd most companies in the data set. Imagine you work for the state and are interested in how many people are employed by companies in different industries. Create a plot that shows the average and/or median employment by industry for companies in this state (only use cases with full data, use R's `complete.cases()` function.) In addition to this, your graph should show how variable the ranges are, and you should deal with outliers.
+
+```{r warning=FALSE}
+# Answer Question 2 here
+complete <- inc[complete.cases(inc), ]
+
+complete |>
+  filter(State == "NY") |>
+  ggplot(aes(x=Industry, y=Employees)) +
+  geom_boxplot() +
+  coord_flip() +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 1,
+               fill = "red") +
+  labs(title = "Employees by Industry - NY State") +
+  ylim(0,1000) +
+  theme_classic()
+```
+
+## Question 3
+
+Now imagine you work for an investor and want to see which industries generate the most revenue per employee. Create a chart that makes this information clear. Once again, the distribution per industry should be shown.
+
+```{r warning=FALSE}
+# Answer Question 3 here
+complete |>
+  mutate(per_emp = Employees/Revenue) |>
+  ggplot(aes(x=Industry, y=Employees)) +
+  geom_boxplot() +
+  coord_flip() +
+  stat_summary(fun = "mean", geom = "point", shape = 23, size = 1,
+               fill = "red") +
+  labs(title = "Revenue per Employees by Industry") +
+  ylim(0,1000) +
+  theme_classic()
+```
+
+
