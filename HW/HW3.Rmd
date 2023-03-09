@@ -1,0 +1,190 @@
+---
+title: "DATA608 - Module 3"
+author: "Josh Iden"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::material:
+    highlight: kate
+    self_contained: false
+    code_folding: hide
+    thumbnails: false
+    gallery: true
+    df_print: kable
+pkgdown:
+  as_is: true 
+#runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(kableExtra)
+library(shiny)
+library(rsconnect)
+```
+
+# Assignment 
+
+
+![](/Users/joshiden/Documents/Classes/CUNY%20SPS/Spring%202023/DATA608/DATA-608/HW/module3.png)
+
+# Solution  
+
+## {.tabset}   
+
+### Data Preparation
+
+First we read the data into R.
+
+```{r}
+df = read.csv('/Users/joshiden/Documents/Classes/CUNY SPS/Spring 2023/DATA608/DATA608/CUNY_DATA_608/module3/data/cleaned-cdc-mortality-1999-2010-2.csv')
+kable(head(df), "pipe")
+```
+
+For ease of use, I am going to subset the data to the desired columns. First, I'll rename the columns to the visualization output I'm looking for.
+
+```{r}
+# change column names
+colnames(df)[1] <- "Cause_Of_Death"
+colnames(df)[6] <- "Crude_Mortality_Rate"
+
+# convert cause of death column to title case 
+df$Cause_Of_Death = str_to_title(df$Cause_Of_Death)
+
+# calculate national average column
+
+# subset data for questions: cause, states, rate, year = 2010
+q1 = df |> 
+  filter(Year == '2010') |>
+  select(c(1, 2, 6))
+
+# question two takes all columns
+q2 = df
+
+# create national average dataframe
+# calculate national average
+q2.1 = q2 |> group_by(Cause_Of_Death, Year) |>
+  summarise(Nat_Avg = sum(Deaths)/sum(Population)*100000)
+
+kable(head(q1), "pipe")
+kable(head(q2), "pipe")
+```
+
+### Question 1 
+
+```{r eval=FALSE}
+# Define UI for app 
+ui <- fluidPage(
+  
+  # App title ---- 
+  titlePanel("Mortality Rate by State"),
+  
+  # Sidebar layout with input and output definitions ---- 
+  sidebarLayout(
+    
+      # Sidebar panel for inputs ---- 
+      sidebarPanel(
+        selectInput('cause', label='Cause of Death', 
+                    choices=unique(q1$Cause_Of_Death),
+                    selected='Certain infectious and parasitic diseases'),
+        width=3
+      ),
+      
+      mainPanel(
+        plotOutput('plot'),
+        height='auto'
+      )
+  )
+)
+
+server <- function(input, output) {
+  
+  selectedData <- reactive({
+    q1 |> filter(Cause_Of_Death == input$cause )
+  })
+
+  output$plot <- renderPlot({
+    
+    ggplot(selectedData(), aes(x=reorder(State,Crude_Mortality_Rate), y=Crude_Mortality_Rate)) +
+      geom_col(fill='#f68060', alpha=.6, width=.4) +
+      coord_flip() +
+      labs(x='State', y='Crude Mortality Rate', title=input$cause)
+    
+  }
+  )
+}
+
+# Run app ----
+shinyApp(ui, server)
+```
+
+The `ui` and `server` functions are defined in the local `app.R` file, and the app is deployed to [ShinyApps](https://josh-iden.shinyapps.io/Q1_SHINY/).
+
+```{r}
+knitr::include_app('https://josh-iden.shinyapps.io/Q1_SHINY/')
+```
+
+### Question 2
+
+```{r eval=FALSE}
+# Define UI for app 
+ui <- fluidPage(
+  
+  # App title ---- 
+  titlePanel("Mortality Rate by State vs. National Avg"),
+  
+  # Sidebar layout with input and output definitions ---- 
+  sidebarLayout(
+    # Sidebar panel for inputs ---- 
+    sidebarPanel(
+      selectInput('cause', 
+                  label='Cause of Death', 
+                  choices=unique(q2$Cause_Of_Death),
+                  selected='Certain Infectious And Parasitic Diseases'),
+      selectInput('state',
+                  label='State',
+                  choices=unique(q2$State),
+                  selected='AL'),
+      width = 3
+    ),
+    
+    mainPanel(
+      plotOutput('plot'),
+      height='auto'
+    )
+  )
+)
+
+server <- function(input, output) {
+  
+  selectedData1 <- reactive({
+    q2 |> filter(Cause_Of_Death == input$cause & State == input$state )
+  })
+  
+  selectedData2 <- reactive({
+    q2.1 |> filter(Cause_Of_Death == input$cause)
+  })
+  
+  output$plot <- renderPlot({
+    
+    ggplot(selectedData1(), aes(x=Year)) +
+      geom_line(aes(y=Crude_Mortality_Rate, color=input$state)) +
+      geom_line(data=selectedData2(), aes(y=Nat_Avg, color='National Avg')) +
+      scale_x_continuous(breaks = scales::pretty_breaks(n = 11)) + 
+      labs(x='Year', y='Crude Mortality Rate', color="color") +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+    
+  }
+  )
+}
+
+# Run app ----
+shinyApp(ui, server)
+```
+
+The `ui` and `server` functions are defined in the local `app.R` file, and the app is deployed to [ShinyApps](https://josh-iden.shinyapps.io/Q2_SHINY/).
+
+```{r}
+knitr::include_app('https://josh-iden.shinyapps.io/Q2_SHINY/')
+```
+

@@ -1,0 +1,13 @@
+name: Q1_SHINY
+title: Q1_SHINY
+username:
+account: josh-iden
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 8517136
+bundleId: 6933251
+url: https://josh-iden.shinyapps.io/Q1_SHINY/
+when: 1678312983.91939
+lastSyncTime: 1678312983.91941
+asMultiple: FALSE
+asStatic: FALSE
