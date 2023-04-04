@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head><title>DATA608 Module 5 HW Part 1</title></head>
+
+<body>
+<h1>DATA608 Module 5 HW Part 1</h1>
+<h2>Josh Iden</h2>
+
+
+<div id = "intro"></div>
+
+<script type="text/javascript">
+	document.getElementById('intro').innerHTML = "<p>This is one of two homework assignments you can complete for this week (you must do one, you may do both for extra credit). Your assignment should be in the form of an HTML page, which I will be able to run locally. Refer to the file js_in_webpage.html on the github page for instructions on setting up javascript to run on an HTML page, and how to run/debug.</p><p>You should complete both of these in 2 (or more) functions on one HTML page:</p>";
+</script>
+
+<div id = "q1"></div>
+
+<script type="text/javascript">
+	document.getElementById('q1').innerHTML = "<p><b>1. Create a function to reverse any word that you type in. This can be typed into either an input box or an alert box, and then print the result in a box or on the webpage.</p></b>";
+</script>
+
+<script type="text/javascript">
+    function reverse(str){
+        return str.split("").reverse().join("");
+    };
+    function reversePrint(){
+            var x = document.getElementById("a1");
+            x.innerHTML = reverse(document.getElementById('str').value);
+        }
+    </script>
+    <form name="mystring">
+        <input id="str" type="str" placeholder="Insert Word Here" size="12">
+        <input type="button" value="Submit" onClick="reversePrint();">
+    </form>
+    <br>
+    <div id="a1"></div>
+
+<script type="text/javascript"> document.write(myScript());</script>
+
+<div id = "q2"></div>
+
+<script type="text/javascript">
+	document.getElementById('q2').innerHTML = "<p><b>2. Create a function that takes an input number and prints a table with the first 20 multiples of the number, in order 5x4.</b></p>";
+</script>
+
+<script type="text/javascript">
+    function multiples(num){
+    	product = [];
+        var tab = '<table border="1">';
+        
+        for (i = 1; i <= 20; i++){
+        	product.push(num * i)
+        }
+        
+        for (i = 0; i < 20; i++){
+        	if (i % 4 == 0) {
+            	tab = tab +'<tr>'
+            }
+            tab = tab + '<td>' + product[i] + '</td>';
+            if (i % 4 == 3){
+            	tab = tab +'</tr>'
+            }
+        }
+        tab = tab + '</table>';
+        return tab
+    };
+            
+    
+	function printMultiples(){
+    	var x = document.getElementById("a2");
+        x.innerHTML = multiples(document.getElementById('num').value);
+    };
+</script>
+
+<form>
+	<input id="num" type="num" placeholder="Enter a Number" size="12">
+    <input type="button" value="Click" onClick="printMultiples();">
+</form>
+
+<div id = "a2"></div>
+
+</body>
+</html>
