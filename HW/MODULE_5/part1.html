@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 
-<head><title>DATA608 Module 5 HW Part 1</title></head>
+<head>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <title>DATA608 Module 5 HW Part 1</title>
+</head>
 
 <body>
 <h1>DATA608 Module 5 HW Part 1</h1>
@@ -79,6 +82,62 @@
 </form>
 
 <div id = "a2"></div>
+
+<br>
+
+<div id = "q3"></div>
+
+<script type="text/javascript">
+    document.getElementById('q3').innerHTML = "<p><b>3. Write a function to load the presidents.csv data and display the data as an html table:</b></p>";
+</script>
+
+<br>
+
+<div id = 'a3'></div>
+
+<script type="text/javascript">
+    const pdata = d3.csv('https://raw.githubusercontent.com/charleyferrari/CUNY_DATA_608/master/module5/data/presidents.csv').then(
+        function(data) {
+            return data;
+        });
+
+    const ptab = pdata.then( function (data) {
+        var columns = ['Name', 'Height', 'Weight'];
+        var table = d3.select('#a3').append('table');
+        var thead = table.append('thead').append('tr');
+        var tbody = table.append('tbody');
+
+        thead
+            .selectAll('th')
+            .data(columns)
+            .enter()
+            .append('th')
+            .text(function(d) { return d; });
+
+        var rows = tbody
+            .selectAll('tr')
+            .data(data)
+            .enter()
+            .append('tr');
+
+        var cells = rows
+            .selectAll("td")
+            .data(function(row){
+                return columns.map(function (column) {
+                    return { column: column, value: row[column] }
+                    })
+                })
+            .enter()
+            .append("td")
+            .text(function (d) { return d.value });
+        return data;
+                            
+                    });
+</script>
+
+
+
+<br>
 
 </body>
 </html>
