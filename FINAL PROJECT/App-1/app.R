@@ -2,12 +2,21 @@ library(shiny)
 library(shinyWidgets)
 library(tidyverse)
 library(geojsonio)
+library(sf)
 library(leaflet)
 
 # read in data
+## local paths ##
 wifis <- read.csv('wifis.csv')
+wifi.v.arrests <- read.csv('wifivarrests.csv')
+wifi.v.arrests$date <- as.Date(wifi.v.arrests$date, "%Y-%m-%d")
 pre <- read.csv('precincts.csv')
-geojson <- "PolicePrecincts.geojson"
+geojson <- 'PolicePrecincts.geojson'
+
+## github paths ##
+# wifis <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/wifis.csv')
+# pre <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/precincts.csv')
+# geojson <- 'https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/PolicePrecincts.geojson'
 pre.geo <- geojson_sf(geojson)
 precincts <- merge(pre, pre.geo) |> st_as_sf()
 
@@ -46,11 +55,12 @@ bins <- c(0, 135, 300, 400, 500, 700, 850, 1000, 1200)
 pal <- colorBin("YlOrRd", domain = precincts$arrests, bins = bins)
 
 # load wifi icon 
-# wifi icon
 wifi.Icon <- makeIcon(
-  iconUrl = "/www/wifi_icon.png",
+  iconUrl = "wifi_icon.png",
   iconWidth = 12, iconHeight = 12
 )
+
+# build Shiny ui
 
 ui <- fluidPage(
   
@@ -60,9 +70,13 @@ ui <- fluidPage(
   leafletOutput("mymap"),
   p(),
   
-  hr(), # horizontal ruel
+  hr(), # horizontal rule
   
   fluidRow(
+    column(4,
+          plotOutput(outputId = "areaPlot")
+          ),
+          
     column(4, 
       sliderTextInput(inputId = "date",
                 label = "Select Month:",
@@ -79,15 +93,15 @@ ui <- fluidPage(
                     "Queens",
                     "Staten Island"),
         selected = "Full Overview")
-    ),
-    column(4,
-           awesomeCheckbox(
-             inputId = "wifibox",
-             label = "Show/Hide Hotspots",
-             value = FALSE,
-             status = "info"
-           ))
-    #   actionButton(inputId = "go",
+    )#,
+    # column(4,
+    #        awesomeCheckbox(
+    #          inputId = "wifibox",
+    #          label = "Show/Hide Hotspots",
+    #          value = FALSE,
+    #          status = "info"
+    #        ))
+    # #   actionButton(inputId = "go",
     #              label = "Update")
     # )
   )
@@ -150,6 +164,17 @@ server <- function(input, output) {
     borough_coords[borough_coords$borough == as.character(input$borough), ]
   })
   
+  output$areaPlot <- renderPlot({
+    wifi.v.arrests |>
+      pivot_longer(!date, names_to = "cat", values_to = "total") |>
+      ggplot(aes(x = date)) +
+      geom_area(aes(y=total, fill=cat), alpha=0.8) +
+      scale_fill_brewer(palette="Set3", labels=c("total arrests","wifi locations")) +
+      theme_classic() +
+      labs(title = "Arrests + Wifi: 2016-2019", fill=NULL) +
+      xlab("") + ylab("") 
+  })
+  
   output$mymap <- renderLeaflet({
     
     leaflet(options = leafletOptions(minZoom = -30, maxZoom = 30)) |>
@@ -168,7 +193,7 @@ server <- function(input, output) {
                     fillOpacity = 0.7,
                     bringToFront = TRUE),
                   label = paste("Arrests:",arrests()$arrests)) |>
-      addMarkers(data = hotspots(), lat = ~ Latitude, lng = ~ Longitude, icon = wifi.Icon, 
+      addMarkers(data = hotspots(), lat = ~ Latitude, lng = ~ Longitude, icon = wifi.Icon,
                  label = ~as.character(Neighborhood))
     # leaflet(options = leafletOptions(minZoom = -300, maxZoom = 18)) |>
     #   addProviderTiles(providers$CartoDB.Voyager) |>
