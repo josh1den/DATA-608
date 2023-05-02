@@ -4,19 +4,21 @@ library(tidyverse)
 library(geojsonio)
 library(sf)
 library(leaflet)
+library(htmltools)
+library(bslib)
 
 # read in data
 ## local paths ##
-wifis <- read.csv('wifis.csv')
-wifi.v.arrests <- read.csv('wifivarrests.csv')
-wifi.v.arrests$date <- as.Date(wifi.v.arrests$date, "%Y-%m-%d")
-pre <- read.csv('precincts.csv')
-geojson <- 'PolicePrecincts.geojson'
+# wifis <- read.csv('wifis.csv')
+# wifi.v.arrests <- read.csv('wifivarrests.csv')
+# wifi.v.arrests$date <- as.Date(wifi.v.arrests$date, "%Y-%m-%d")
+# pre <- read.csv('precincts.csv')
+# geojson <- 'PolicePrecincts.geojson'
 
-## github paths ##
-# wifis <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/wifis.csv')
-# pre <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/precincts.csv')
-# geojson <- 'https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/PolicePrecincts.geojson'
+# github paths ##
+wifis <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/wifis.csv')
+pre <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/precincts.csv')
+geojson <- 'https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/PolicePrecincts.geojson'
 pre.geo <- geojson_sf(geojson)
 precincts <- merge(pre, pre.geo) |> st_as_sf()
 
@@ -57,15 +59,18 @@ pal <- colorBin("YlOrRd", domain = precincts$arrests, bins = bins)
 # load wifi icon 
 wifi.Icon <- makeIcon(
   iconUrl = "wifi_icon.png",
-  iconWidth = 12, iconHeight = 12
+  iconWidth = 6, iconHeight = 6
 )
 
 # build Shiny ui
 
 ui <- fluidPage(
   
+  # bootswatch theme
+  theme = bs_theme(version = 4, bootswatch = "minty"),
+  
   # Application title
-  tags$h1("Arrests in Proximity to Free Wifi Hotspots"),
+  tags$h1("Arrests in Proximity to Free Wifi Kiosks"),
   
   leafletOutput("mymap"),
   p(),
@@ -73,26 +78,33 @@ ui <- fluidPage(
   hr(), # horizontal rule
   
   fluidRow(
-    column(4,
-          plotOutput(outputId = "areaPlot")
+    column(
+          8,
+          fluidRow(
+          plotlyOutput(outputId = "areaPlot"), 
+          style = "height:400px")
           ),
           
-    column(4, 
-      sliderTextInput(inputId = "date",
-                label = "Select Month:",
-                choices = choices_month),
-    ),
-    column(4,
-      pickerInput(
-        inputId = "borough",
-        label = "Zoom to Borough",
-        choices = c("Full Overview",
-                    "Manhattan",
-                    "Brooklyn",
-                    "The Bronx",
-                    "Queens",
-                    "Staten Island"),
-        selected = "Full Overview")
+    column(
+          4, 
+          fluidRow(  
+          sliderTextInput(inputId = "date",
+                          label = "Select Month:",
+                          choices = choices_month), 
+          style = "height:200px"),
+          fluidRow(
+            pickerInput(
+              inputId = "borough",
+              label = "Zoom to Borough",
+              choices = c("Full Overview",
+                          "Manhattan",
+                          "Brooklyn",
+                          "The Bronx",
+                          "Queens",
+                          "Staten Island"),
+              selected = "Full Overview"),
+            style = "height:200px")
+    )
     )#,
     # column(4,
     #        awesomeCheckbox(
@@ -144,7 +156,7 @@ ui <- fluidPage(
   # )
   # )
 
-)
+
 
 server <- function(input, output) {
   
@@ -164,15 +176,18 @@ server <- function(input, output) {
     borough_coords[borough_coords$borough == as.character(input$borough), ]
   })
   
-  output$areaPlot <- renderPlot({
-    wifi.v.arrests |>
-      pivot_longer(!date, names_to = "cat", values_to = "total") |>
-      ggplot(aes(x = date)) +
-      geom_area(aes(y=total, fill=cat), alpha=0.8) +
-      scale_fill_brewer(palette="Set3", labels=c("total arrests","wifi locations")) +
-      theme_classic() +
-      labs(title = "Arrests + Wifi: 2016-2019", fill=NULL) +
-      xlab("") + ylab("") 
+  output$areaPlot <- renderPlotly({
+    plot_ly(wifi.v.arrests, x= ~date, y = ~wifi, name = 'wifi', type = 'scatter',
+            mode = 'none', stackgroup = 'one', fillcolor = '#F5FF8D') |> 
+            add_trace(y = ~arrests, name = 'arrests', fillcolor = '#50CB86') |>
+            layout(title = 'Arrests and Wifi, 2016-2019',
+                    xaxis = list(title = "",
+                                 showgrid = FALSE),
+                    yaxis = list(title = "Total",
+                                 showgrid = FALSE,
+                                 tickvals = list("", 5000, 10000, 15000, 20000, 25000, 30000),
+                                 ticktext = list("", "5k", "10k", "15k", "20k", "25k", "30k"),
+                                 tickmode = "array")) 
   })
   
   output$mymap <- renderLeaflet({
@@ -192,7 +207,12 @@ server <- function(input, output) {
                     dashArray = "",
                     fillOpacity = 0.7,
                     bringToFront = TRUE),
-                  label = paste("Arrests:",arrests()$arrests)) |>
+                  label = paste("Precinct:",
+                                 arrests()$precinct,
+                                 "<br>",
+                                 "Arrests:",
+                                 arrests()$arrests) |>
+                    lapply(htmltools::HTML)) |>
       addMarkers(data = hotspots(), lat = ~ Latitude, lng = ~ Longitude, icon = wifi.Icon,
                  label = ~as.character(Neighborhood))
     # leaflet(options = leafletOptions(minZoom = -300, maxZoom = 18)) |>
