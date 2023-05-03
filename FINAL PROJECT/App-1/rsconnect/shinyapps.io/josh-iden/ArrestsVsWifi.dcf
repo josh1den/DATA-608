@@ -1,0 +1,14 @@
+name: ArrestsVsWifi
+title: ArrestsVsWifi
+username:
+account: josh-iden
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 9013614
+bundleId: 7169469
+url: https://josh-iden.shinyapps.io/ArrestsVsWifi/
+when: 1683128406.18453
+lastSyncTime: 1683128406.18455
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: PolicePrecincts.geojson|precincts.csv|wifis.csv|wifivarrests.csv|www/.DS_Store

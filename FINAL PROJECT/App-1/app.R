@@ -4,23 +4,17 @@ library(tidyverse)
 library(geojsonio)
 library(sf)
 library(leaflet)
+library(plotly)
 library(htmltools)
 library(bslib)
 
-# read in data
-## local paths ##
-# wifis <- read.csv('wifis.csv')
-# wifi.v.arrests <- read.csv('wifivarrests.csv')
-# wifi.v.arrests$date <- as.Date(wifi.v.arrests$date, "%Y-%m-%d")
-# pre <- read.csv('precincts.csv')
-# geojson <- 'PolicePrecincts.geojson'
-
-# github paths ##
+## github paths ##
 wifis <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/wifis.csv')
 pre <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/precincts.csv')
+wifi.v.arrests <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/wifivarrests.csv')
+wifi.v.arrests$date <- as.Date(wifi.v.arrests$date, "%Y-%m-%d")
 geojson <- 'https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/PolicePrecincts.geojson'
 pre.geo <- geojson_sf(geojson)
-precincts <- merge(pre, pre.geo) |> st_as_sf()
 
 # store borough coordinates from web
 borough_coords <- data.frame(borough = c("Full Overview",
@@ -54,12 +48,12 @@ choices_month <- format(seq.Date(from = as.Date("2016-01-01"), by = "month",
 
 # set bins and color range
 bins <- c(0, 135, 300, 400, 500, 700, 850, 1000, 1200)
-pal <- colorBin("YlOrRd", domain = precincts$arrests, bins = bins)
+pal <- colorBin("YlOrRd", domain = pre$arrests, bins = bins)
 
 # load wifi icon 
 wifi.Icon <- makeIcon(
   iconUrl = "wifi_icon.png",
-  iconWidth = 6, iconHeight = 6
+  iconWidth = 10, iconHeight = 10
 )
 
 # build Shiny ui
@@ -79,84 +73,32 @@ ui <- fluidPage(
   
   fluidRow(
     column(
-          8,
+          7,
           fluidRow(
-          plotlyOutput(outputId = "areaPlot"), 
-          style = "height:400px")
+            plotlyOutput(outputId = "areaPlot"), 
+            style = "height:400px")
           ),
           
     column(
-          4, 
-          fluidRow(  
-          sliderTextInput(inputId = "date",
-                          label = "Select Month:",
-                          choices = choices_month), 
-          style = "height:200px"),
-          fluidRow(
-            pickerInput(
-              inputId = "borough",
-              label = "Zoom to Borough",
-              choices = c("Full Overview",
-                          "Manhattan",
-                          "Brooklyn",
-                          "The Bronx",
-                          "Queens",
-                          "Staten Island"),
-              selected = "Full Overview"),
-            style = "height:200px")
+      4, offset = 1, 
+      verticalLayout(
+        sliderTextInput(inputId = "date",
+                        label = "Select Month:",
+                        choices = choices_month),
+        pickerInput(
+          inputId = "borough",
+          label = "Zoom to Borough",
+          choices = c("Full Overview",
+                      "Manhattan",
+                      "Brooklyn",
+                      "The Bronx",
+                      "Queens",
+                      "Staten Island"),
+          selected = "Full Overview")
+      )
     )
-    )#,
-    # column(4,
-    #        awesomeCheckbox(
-    #          inputId = "wifibox",
-    #          label = "Show/Hide Hotspots",
-    #          value = FALSE,
-    #          status = "info"
-    #        ))
-    # #   actionButton(inputId = "go",
-    #              label = "Update")
-    # )
+    )
   )
-
-  # sidebar with slider
-  # sidebarLayout(
-  #   sidebarPanel(
-  #     sliderInput(inputId = "date",
-  #                 label = "Drag to Date",
-  #                 min = as.Date("2016-01-01", "%Y-%m-%d"),
-  #                 max = as.Date("2019-03-01", "%Y-%m-%d"),
-  #                 value = as.Date("2016-01-01", "%Y-%m-%d")
-  #                 )
-  #     )
-  # ),
-  # 
-  # mainPanel(
-  #   leafletOutput("mymap"),
-  #   p()
-  # )
-  # leafletOutput("mymap"),
-  # p(),
-  # sidebarLayout(position = "below",
-  #   sidebarPanel(
-  #     sliderInput(inputId = "date",
-  #                             label = "Drag to Date",
-  #                             min = as.Date("2016-01-01", "%Y-%m-%d"),
-  #                             max = as.Date("2019-03-01", "%Y-%m-%d"),
-  #                             value = as.Date("2016-01-01", "%Y-%m-%d")
-  #                             ),
-  #     actionButton(inputId = "go",
-  #                  label = "Update")
-  # ),
-  # 
-  #   mainPanel(
-  #     leafletOutput("mymap",
-  #                 height="80vh",
-  #                 width = "60vw"),
-  #     p()
-  # )
-  # )
-
-
 
 server <- function(input, output) {
   
@@ -169,7 +111,7 @@ server <- function(input, output) {
   
   arrests <- reactive({
     stamp <- as.Date(paste("01", unlist(strsplit(input$date, ";")), sep="-"), "%d-%B-%Y")
-    precincts[precincts$date <= stamp, ]
+    pre[pre$date <= stamp, ]
   })
   
   borough <- reactive({
@@ -195,8 +137,8 @@ server <- function(input, output) {
     leaflet(options = leafletOptions(minZoom = -30, maxZoom = 30)) |>
       addTiles() |>
       setView(lng = borough()$longitude, lat = borough()$latitude, zoom=borough()$zoom) |>
-      addPolygons(data = arrests(),
-                  color = "white", fillColor = ~pal(arrests),
+      addPolygons(data = pre.geo,
+                  color = "white", fillColor = ~pal(arrests()$arrests),
                   weight = 2,
                   opacity = 1,
                   dashArray = "3",
@@ -214,13 +156,14 @@ server <- function(input, output) {
                                  arrests()$arrests) |>
                     lapply(htmltools::HTML)) |>
       addMarkers(data = hotspots(), lat = ~ Latitude, lng = ~ Longitude, icon = wifi.Icon,
-                 label = ~as.character(Neighborhood))
-    # leaflet(options = leafletOptions(minZoom = -300, maxZoom = 18)) |>
-    #   addProviderTiles(providers$CartoDB.Voyager) |>
-    #   addMarkers(data = hotspots(), lat = ~ Latitude, lng = ~ Longitude, icon = wifiIcon, 
-    #              label = ~as.character(Neighborhood)) |>
-    #   setView(lng=nyc_coords[2], lat=nyc_coords[1], zoom=10)
-    
+                           label = ~as.character(Neighborhood), group = "Show/Hide Wifi") |>
+      addLayersControl(
+        overlayGroups = "Show/Hide Wifi",
+        options = layersControlOptions(collapsed = FALSE)
+      ) |>
+      addLegend("bottomright", pal = pal, values = bins,
+                title = "Arrests",
+                opacity = 1)
   })
 
 }
