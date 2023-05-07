@@ -1,0 +1,383 @@
+---
+title: "Arrests with Proximity to Wifi Kiosks"
+author: "Josh Iden"
+date: '`r Sys.Date()`'
+output: 
+  rmdformats::downcute:
+    code_folding: hide
+    highlight: haddock
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(shiny)
+library(shinyWidgets)
+library(tidyverse)
+library(plyr)
+library(geojsonio)
+library(sf)
+library(leaflet)
+library(htmltools)
+library(bslib)
+library(salesforcer)
+library(kableExtra)
+```
+
+![](https://www.vmcdn.ca/f/files/bkreader/import/2017_09_link-nyc-gear-patrol-slide-1.jpg)
+
+## Introduction
+
+[Link NYC](https://www.link.nyc/) is a network of free Wifi Service in New York City, through which public wifi kiosks were installed beginning in late 2015 to replace the city's payphones. In this project, I create a ShinyApp to visualize the proximity of these public Wifi kiosks to arrests. The goal is to determine if a visual relationship can be established that connects the presence of wifi kiosks to reduced crime. Such a relationship could allow government agencies to direct more funding to establishing wifi hotspots in high crime areas. 
+
+## Data Acquisition
+
+Three datasets provided by the [City of New York](https://data.cityofnewyork.us/) were acquired by SoQL queries using the [Open Data](https://opendata.cityofnewyork.us/) API, cleaned, and stored to GitHub:
+
+-   [NYC Hotspot Locations](https://data.cityofnewyork.us/City-Government/NYC-Wi-Fi-Hotspot-Locations/yjub-udmw).
+-   [NYC Arrest Data](https://data.cityofnewyork.us/Public-Safety/NYPD-Arrests-Data-Historic-/8h9b-rp9u).
+-   [NYC Police Precinct Data](https://data.cityofnewyork.us/Public-Safety/Police-Precincts/78dh-3ptz)
+
+## Data Wrangling
+
+The following steps were taken during the data wrangling process to prepare the data for exploration:
+
+### Wifi Data
+
+First we read in the data,
+
+```{r cache=TRUE}
+# API endpoint
+wifi.url <- 'https://data.cityofnewyork.us/resource/yjub-udmw.csv'
+# querying the desired columns from website: 
+wifi.query <- paste0(wifi.url, "?$select=activated,boroname+AS+borough,ntaname+AS+neighborhood,latitude,longitude")
+wifis <- read.csv(wifi.query)
+kable_styling(kable(head(wifis), "html"), "hover", "left", font_size=12)
+```
+
+Next we do some cleaning to the date column. We deal with the bad dates and assume those dates represent active hotspots when the data was first collected. Then we write the file to disk.
+
+```{r}
+# parse the date time column 
+wifis$activated <- as.Date(lubridate::parse_date_time(as.Date(wifis$activated), orders=c('mdY', 'Ymd')))
+
+# store the "bad date" and look for the next earliest date to convert the bad dates to
+bad.date <- "9999-09-09"
+
+# find earliest date not 9999-09-09
+earliest.date <- wifis |>
+  filter(activated != bad.date) |>
+  select(activated) |>
+  summarise(min(activated))
+
+# isolate the date
+earliest.date <- earliest.date[[1]]
+
+# replace 9999-09-09 with earliest date
+indices <- which(wifis$activated == bad.date)
+
+wifis$activated <- wifis$activated |>
+  replace(indices, earliest.date) 
+
+# group dates by month
+wifis <- wifis |>
+  mutate(activated = floor_date(activated, unit = "month"))
+
+# write file to disk
+write.csv(wifis, "wifis.csv", row.names = FALSE)
+
+kable_styling(kable(head(wifis), "html"), "hover", "left", font_size=12)
+```
+
+### Arrests Data
+
+Now we take a look at the arrests data,
+
+```{r cache=TRUE}
+# API endpoint
+arrests.url <- 'https://data.cityofnewyork.us/resource/8h9b-rp9u.csv'
+
+# SoQL query for desired columns in years 2016-2019
+arrests.query <- paste0(arrests.url, "?$select=date_trunc_ymd(arrest_date)+AS+arrest_date,arrest_precinct,arrest_boro,count(*)+AS+total_arrests&$where=date_extract_y(arrest_date)in('2016','2017','2018','2019')&$group=arrest_date,arrest_precinct,arrest_boro&$limit=5000000")
+
+# read the file
+arrests <- read.csv(arrests.query)
+
+kable_styling(kable(head(arrests), "html"), "hover", "left", font_size=12)
+```
+
+First we map the values for the `arrest_borough` column,
+
+```{r}
+arrests$arrest_boro <- plyr::mapvalues(arrests$arrest_boro,
+                                          from=c("Q","M","K","B","S"),
+                                          to=c("Queens","Manhattan","Brooklyn",
+                                               "The Bronx","Staten Island"))
+
+kable_styling(kable(head(arrests), "html"), "hover", "left", font_size=12)
+```
+
+And perform the same date grouping as with the wifi data, grouping by month, and once again aggregate the data by month:
+
+```{r}
+arrests$arrest_date = as.Date(lubridate::parse_date_time(as.Date(arrests$arrest_date), orders=c('mdY', 'Ymd')))
+         
+arrests <- arrests |> 
+  mutate(date = as.Date(floor_date(as.Date(arrest_date), "month"))) |>
+  dplyr::group_by(date, arrest_precinct, arrest_boro) |>
+  dplyr::summarise(total_arrests = sum(total_arrests)) |>
+  dplyr::rename(precinct = arrest_precinct,
+                borough = arrest_boro)
+
+kable_styling(kable(head(arrests), "html"), "hover", "left", font_size=12)
+```
+
+### Police Precinct Data
+
+Now we can read in the Police Precinct geojson data to combine with the arrests data.
+
+```{r}
+geojson <- 'https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/PolicePrecincts.geojson'
+
+# convert geojson to shape file
+p.sf <- geojson_sf(geojson)
+
+# merge geojson and precincts data
+precinct.arrests <- merge(arrests, p.sf) |>
+  st_as_sf()
+```
+
+### Combining Arrests and Wifi by Date
+
+Lastly, we create a dataframe combining the total arrests and wifi locations by date,
+
+```{r}
+# wifi by date
+wifis.by.date <- wifis |>
+  group_by(date = as.Date(activated)) |>
+  dplyr::summarise(total = n()) |>
+  mutate(total = cumsum(total))
+
+# arrests by date
+arrests.by.date <- arrests |>
+  group_by(date) |>
+  dplyr::summarise(total = sum(total_arrests))
+
+# combine the dataframes 
+wifis.v.arrests <- wifis.by.date |>
+  left_join(arrests.by.date, join_by(date)) |>
+  dplyr::rename(wifi = total.x, arrests = total.y)
+
+kable_styling(kable(head(wifis.v.arrests), "html"), "hover", "left", font_size=12)
+```
+## Data Visualization
+
+Now we are ready to build our ShinyApp. 
+
+The `ui` and `server` functions are defined in the local `app.R` file, and the app is deployed to [ShinyApps](https://josh-iden.shinyapps.io/ArrestsVsWifi/)
+
+```{r}
+knitr::include_app('https://josh-iden.shinyapps.io/ArrestsVsWifi/')
+```
+
+In this app, I used a leaflet map to visualize crime by police precinct, with wifi icons denoting the location of kiosks on the map. The map is controllable by the slider bar on the bottom right, where the bar can be dragged to observe the change in crime and wifi locations over time. There is also a dropdown to zoom in by borough. On the bottom left, a plotly graph displays the total arrests and wifi locations during the time frame. Hovering over the map displays the data points by their respective dates. We can also toggle the wifi locations to show or hide the hotspots. 
+
+## Analysis
+
+We observe from the graph on the bottom left that arrests decreased between January 2016 and January 2019, while total wifi locations increased during that time.
+
+If we zoom in on specific precincts, for example, precinct 75, which includes the Ocean Hill, Cypress Hill, and East New York neighborhoods, we can observe that as wifi locations increased substantially, arrests did in fact decrease: in January 2016, there were 758 arrests and 12 hotspots, compared with January 2019, when there were 485 arrests and 26 hotspots.
+
+## Conclusion
+
+The map does make it possible to visually identify high arrest areas and the distribution of wifi hotspots in those areas, but unfortunately one of the limitations of the available data is connecting the total number of wifi locations per police precinct. Another limitiation of the data is that crime is not available per capita by precinct, as population by police precinct data is not available, and the transformation of census data by geocoordinates was determined to be outside the scope of this analysis. That said, this map provides an immediate visual aid to identifying high crime areas and the distribution of hotspots in those areas over time, and provides the ability to zoom in on specific areas and glean insights that are not as easily recognizable in tabular form. 
+
+## Appendix
+
+```{r}
+library(shiny)
+library(shinyWidgets)
+library(tidyverse)
+library(geojsonio)
+library(sf)
+library(leaflet)
+library(plotly)
+library(htmltools)
+library(bslib)
+
+## github paths ##
+wifis <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/wifis.csv')
+pre <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/precincts.csv')
+wifi.v.arrests <- read.csv('https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/wifivarrests.csv')
+wifi.v.arrests$date <- as.Date(wifi.v.arrests$date, "%Y-%m-%d")
+geojson <- 'https://raw.githubusercontent.com/josh1den/DATA-608/main/FINAL%20PROJECT/data/PolicePrecincts.geojson'
+pre.geo <- geojson_sf(geojson)
+
+# store borough coordinates from web
+borough_coords <- data.frame(borough = c("Full Overview",
+                                         "Manhattan",
+                                         "Brooklyn",
+                                         "The Bronx",
+                                         "Queens",
+                                         "Staten Island"),
+                             longitude = c(-73.935242,
+                                           -73.971321,
+                                           -73.949997,
+                                           -73.865433,
+                                           -73.769417,
+                                           -74.151535),
+                             latitude = c(40.730610,
+                                          40.776676,
+                                          40.650002,
+                                          40.837048,
+                                          40.742054,
+                                          40.579021),
+                             zoom = c(10,
+                                      12,
+                                      12,
+                                      12,
+                                      12,
+                                      12))
+
+# store list of months
+choices_month <- format(seq.Date(from = as.Date("2016-01-01"), by = "month",
+                                                length.out = 37), "%b-%Y")
+
+# set bins and color range
+bins <- c(0, 135, 300, 400, 500, 700, 850, 1000, 1200)
+pal <- colorBin("YlOrRd", domain = pre$arrests, bins = bins)
+
+# load wifi icon 
+wifi.Icon <- makeIcon(
+  iconUrl = "wifi_icon.png",
+  iconWidth = 10, iconHeight = 10
+)
+
+# build Shiny ui
+
+ui <- fluidPage(
+  
+  # bootswatch theme
+  theme = bs_theme(version = 4, bootswatch = "minty"),
+  
+  # Application title
+  tags$h1("Arrests in Proximity to Free Wifi Kiosks"),
+  
+  leafletOutput("mymap"),
+  p(),
+  
+  hr(), # horizontal rule
+  
+  fluidRow(
+    column(
+          7,
+          fluidRow(
+            plotlyOutput(outputId = "areaPlot"), 
+            style = "height:400px")
+          ),
+          
+    column(
+      4, offset = 1, 
+      verticalLayout(
+        sliderTextInput(inputId = "date",
+                        label = "Select Month:",
+                        choices = choices_month),
+        pickerInput(
+          inputId = "borough",
+          label = "Zoom to Borough",
+          choices = c("Full Overview",
+                      "Manhattan",
+                      "Brooklyn",
+                      "The Bronx",
+                      "Queens",
+                      "Staten Island"),
+          selected = "Full Overview")
+      )
+    )
+    )
+  )
+
+server <- function(input, output) {
+  
+  # reactive expression for the subset data (by date)
+  
+  hotspots <- reactive({
+    stamp <- as.Date(paste("01", unlist(strsplit(input$date, ";")), sep="-"), "%d-%B-%Y")
+    wifis[wifis$Activated <= stamp, ]
+  })
+  
+  arrests <- reactive({
+    stamp <- as.Date(paste("01", unlist(strsplit(input$date, ";")), sep="-"), "%d-%B-%Y")
+    pre[pre$date <= stamp, ]
+  })
+  
+  borough <- reactive({
+    borough_coords[borough_coords$borough == as.character(input$borough), ]
+  })
+  
+  output$areaPlot <- renderPlotly({
+    plot_ly(wifi.v.arrests, x= ~date, y = ~wifi, name = 'wifi', type = 'scatter',
+            mode = 'none', stackgroup = 'one', fillcolor = '#F5FF8D') |> 
+            add_trace(y = ~arrests, name = 'arrests', fillcolor = '#50CB86') |>
+            layout(title = 'Arrests and Wifi, 2016-2019',
+                    xaxis = list(title = "",
+                                 showgrid = FALSE),
+                    yaxis = list(title = "Total",
+                                 showgrid = FALSE,
+                                 tickvals = list("", 5000, 10000, 15000, 20000, 25000, 30000),
+                                 ticktext = list("", "5k", "10k", "15k", "20k", "25k", "30k"),
+                                 tickmode = "array")) 
+  })
+  
+  output$mymap <- renderLeaflet({
+    
+    leaflet(options = leafletOptions(minZoom = -30, maxZoom = 30)) |>
+      addTiles() |>
+      setView(lng = borough()$longitude, lat = borough()$latitude, zoom=borough()$zoom) |>
+      addPolygons(data = pre.geo,
+                  color = "white", fillColor = ~pal(arrests()$arrests),
+                  weight = 2,
+                  opacity = 1,
+                  dashArray = "3",
+                  fillOpacity = 0.7,
+                  highlightOptions = highlightOptions (
+                    weight = 2,
+                    color = "#800000",
+                    dashArray = "",
+                    fillOpacity = 0.7,
+                    bringToFront = TRUE),
+                  label = paste("Precinct:",
+                                 arrests()$precinct,
+                                 "<br>",
+                                 "Arrests:",
+                                 arrests()$arrests) |>
+                    lapply(htmltools::HTML)) |>
+      addMarkers(data = hotspots(), lat = ~ Latitude, lng = ~ Longitude, icon = wifi.Icon,
+                           label = ~as.character(Neighborhood), group = "Show/Hide Wifi") |>
+      addLayersControl(
+        overlayGroups = "Show/Hide Wifi",
+        options = layersControlOptions(collapsed = FALSE)
+      ) |>
+      addLegend("bottomright", pal = pal, values = bins,
+                title = "Arrests",
+                opacity = 1)
+  })
+
+}
+
+# shinyApp(ui = ui, server = server) ##
+```
+
+
+## References
+
+<https://www.link.nyc/>.
+
+<https://en.wikipedia.org/wiki/LinkNYC>.
+
+<https://mastering-shiny.org/>.
+
+<https://shiny.rstudio.com/tutorial/written-tutorial/>.
+
+<https://shiny.rstudio.com/articles/layout-guide.html>.
+
+<https://rstudio.github.io/leaflet/>.
